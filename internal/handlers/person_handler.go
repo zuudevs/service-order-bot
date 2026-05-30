@@ -79,9 +79,9 @@ func (h *PersonHandler) HandleList(chatID int64) {
 
 // HandleView shows details for a single person
 func (h *PersonHandler) HandleView(userID, chatID int64) {
-	h.sessions.Set(userID, session.StateIdle)
+	h.sessions.Clear(userID)
+	h.sessions.Set(userID, session.StateViewPersonID)
 	h.send(chatID, "🔍 Enter the *Person ID* to view:", keyboards.CancelOnly())
-	h.sessions.Set(userID, "person_view_id")
 }
 
 // HandleViewByID fetches and displays a person
@@ -155,7 +155,7 @@ func (h *PersonHandler) HandleDelete(userID, chatID int64) {
 func (h *PersonHandler) HandleMessage(userID, chatID int64, text string, state session.State) bool {
 	switch state {
 
-	case "person_view_id":
+	case session.StateViewPersonID:
 		h.HandleViewByID(chatID, text)
 		h.sessions.Clear(userID)
 		return true
@@ -172,12 +172,14 @@ func (h *PersonHandler) HandleMessage(userID, chatID int64, text string, state s
 		return true
 
 	case session.StateCreatePersonMiddleName:
+		text = strings.TrimSpace(text)
 		h.sessions.SetData(userID, "middlename", text)
 		h.sessions.Set(userID, session.StateCreatePersonLastName)
 		h.send(chatID, "Enter *last name* (or skip):", keyboards.SkipCancel())
 		return true
 
 	case session.StateCreatePersonLastName:
+		text = strings.TrimSpace(text)
 		h.sessions.SetData(userID, "lastname", text)
 		h.finishCreate(userID, chatID)
 		return true

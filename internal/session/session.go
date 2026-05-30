@@ -25,6 +25,7 @@ const (
 	StateIdle State = ""
 
 	// Person states
+	StateViewPersonID           State = "person_view_id"
 	StateCreatePersonFirstName  State = "create_person_firstname"
 	StateCreatePersonMiddleName State = "create_person_middlename"
 	StateCreatePersonLastName   State = "create_person_lastname"
