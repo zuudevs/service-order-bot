@@ -15,14 +15,15 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/zuudevs/service-order-bot/internal/keyboards"
 	"github.com/zuudevs/service-order-bot/internal/models"
-	"github.com/zuudevs/service-order-bot/internal/session"
 	"github.com/zuudevs/service-order-bot/internal/services"
+	"github.com/zuudevs/service-order-bot/internal/session"
 )
 
 type PersonHandler struct {
@@ -46,7 +47,10 @@ func (h *PersonHandler) send(chatID int64, text string, markup ...tgbotapi.Inlin
 	if len(markup) > 0 {
 		msg.ReplyMarkup = markup[0]
 	}
-	h.bot.Send(msg)
+	
+	if _, err := h.bot.Send(msg); err != nil {
+		log.Printf("[PersonHandler] Gagal mengirim pesan ke chatID %d: %v\n", chatID, err)
+	}
 }
 
 // HandleMenu sends the person sub-menu
@@ -58,7 +62,9 @@ func (h *PersonHandler) HandleMenu(chatID int64) {
 func (h *PersonHandler) HandleList(chatID int64) {
 	persons, err := h.svc.List()
 	if err != nil {
-		h.send(chatID, "❌ Failed to fetch persons: "+err.Error(), keyboards.BackToMain())
+		// Escape markdown pada error untuk mencegah silent failure
+		errMsg := escapeMarkdown(err.Error())
+		h.send(chatID, "❌ Failed to fetch persons: "+errMsg, keyboards.BackToMain())
 		return
 	}
 
@@ -94,7 +100,8 @@ func (h *PersonHandler) HandleViewByID(chatID int64, idStr string) {
 
 	person, err := h.svc.GetByID(id)
 	if err != nil {
-		h.send(chatID, "❌ Person not found: "+err.Error(), keyboards.PersonMenu())
+		errMsg := escapeMarkdown(err.Error())
+		h.send(chatID, "❌ Person not found: "+errMsg, keyboards.PersonMenu())
 		return
 	}
 
@@ -237,7 +244,8 @@ func (h *PersonHandler) HandleMessage(userID, chatID int64, text string, state s
 		}
 
 		if err := h.svc.Patch(id, req); err != nil {
-			h.send(chatID, "❌ Update failed: "+err.Error(), keyboards.PersonMenu())
+			errMsg := escapeMarkdown(err.Error())
+			h.send(chatID, "❌ Update failed: "+errMsg, keyboards.PersonMenu())
 		} else {
 			h.send(chatID, fmt.Sprintf("✅ Person #%d updated successfully!", id), keyboards.PersonMenu())
 		}
@@ -289,7 +297,8 @@ func (h *PersonHandler) HandleCallback(userID, chatID int64, data string) bool {
 			return true
 		}
 		if err := h.svc.Delete(id); err != nil {
-			h.send(chatID, "❌ Delete failed: "+err.Error(), keyboards.PersonMenu())
+			errMsg := escapeMarkdown(err.Error())
+			h.send(chatID, "❌ Delete failed: "+errMsg, keyboards.PersonMenu())
 		} else {
 			h.send(chatID, fmt.Sprintf("🗑️ Person #%d deleted.", id), keyboards.PersonMenu())
 		}
@@ -311,17 +320,31 @@ func (h *PersonHandler) finishCreate(userID, chatID int64) {
 	req := models.CreatePersonRequest{FirstName: firstname}
 
 	if mn, ok := middlenameRaw.(string); ok && mn != "" {
-		req.MiddleName = &mn
+		mnCopy := mn 
+		req.MiddleName = &mnCopy
 	}
 	if ln, ok := lastnameRaw.(string); ok && ln != "" {
-		req.LastName = &ln
+		lnCopy := ln
+		req.LastName = &lnCopy
 	}
 
 	if err := h.svc.Create(req); err != nil {
-		h.send(chatID, "❌ Failed to create person: "+err.Error(), keyboards.PersonMenu())
+		// FIX: Melakukan escape pada karakter markdown sebelum dikirim
+		// agar tidak merusak formatting bot (yang memicu pesan tidak terkirim)
+		errMsg := escapeMarkdown(err.Error())
+		h.send(chatID, "❌ Failed to create person:\n"+errMsg, keyboards.PersonMenu())
 	} else {
 		h.send(chatID, fmt.Sprintf("✅ Person *%s* created successfully!", firstname), keyboards.PersonMenu())
 	}
 
 	h.sessions.Clear(userID)
+}
+
+// escapeMarkdown prevents strings from breaking Markdown V1 formatting
+func escapeMarkdown(text string) string {
+	text = strings.ReplaceAll(text, "_", "\\_")
+	text = strings.ReplaceAll(text, "*", "\\*")
+	text = strings.ReplaceAll(text, "`", "\\`")
+	text = strings.ReplaceAll(text, "[", "\\[")
+	return text
 }
